@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { getWebEnv } from './scripts/web-env.cjs';
+
+const webEnv = getWebEnv();
 
 export default defineConfig({
   testDir: './e2e',
@@ -8,12 +11,12 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:4200',
+    baseURL: webEnv.baseURL,
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'pnpm dev:web',
-    url: 'http://localhost:4200',
+    command: `pnpm dev:web -- --port ${webEnv.port}`,
+    url: webEnv.baseURL,
     reuseExistingServer: !process.env.CI,
   },
   projects: [

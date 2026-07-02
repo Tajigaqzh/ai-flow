@@ -33,7 +33,7 @@ export function HomePage() {
   const markStarted = useFlowStore((state) => state.markStarted);
 
   return (
-    <Space direction="vertical" size={24} className={styles.pageStack}>
+    <Space orientation="vertical" size={24} className={styles.pageStack}>
       <Flex justify="space-between" align="flex-start" gap={16} wrap>
         <div>
           <Typography.Title level={2}>组件总览</Typography.Title>
@@ -84,7 +84,7 @@ export function HomePage() {
       </Row>
 
       <Card title="Zustand 状态示例">
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <Typography.Text>Current flow: {currentFlow}</Typography.Text>
           <Button type="primary" onClick={markStarted}>
             Get Started

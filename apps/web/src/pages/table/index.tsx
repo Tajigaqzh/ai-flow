@@ -82,7 +82,7 @@ const columns: TableProps<TaskRow>['columns'] = [
 
 export function TablePage() {
   return (
-    <Space direction="vertical" size={24} className={styles.pageStack}>
+    <Space orientation="vertical" size={24} className={styles.pageStack}>
       <div>
         <Typography.Title level={2}>表格列表</Typography.Title>
         <Typography.Paragraph type="secondary">

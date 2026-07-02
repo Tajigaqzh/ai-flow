@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const rootDir = join(fileURLToPath(import.meta.url), '..', '..');
+const rootDir = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const tempDir = join(rootDir, 'tmp', 'commitlint');
 const commitlintBin =
   process.platform === 'win32'

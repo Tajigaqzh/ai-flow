@@ -52,7 +52,14 @@ const commentScanExtensions = new Set([
   '.css',
   '.html',
   '.less',
+  '.md',
   '.scss',
+]);
+// 这些文本类文件会参与模板残留文案扫描，避免提交 Nx 生成模板说明。
+const templateTextScanExtensions = new Set([
+  ...commentScanExtensions,
+  '.mdx',
+  '.txt',
 ]);
 
 // React 相关的手写扫描只处理 JSX/TSX，避免误扫普通 TS/JS 字符串。
@@ -140,9 +147,31 @@ function buildCommentBypassFinding(filePath, startLine, endLine, reason) {
   return `${filePath}:${startLine}-${endLine} bypassed ${commentedCodeRuleName}: ${reason}`;
 }
 
+function buildTemplateTextFinding(filePath, lineNumber, message) {
+  return `${filePath}:${lineNumber} ${message}`;
+}
+
 function getLineNumber(content, index) {
   // matchAll 只能给出字符下标，这里转换成用户能直接定位的 1-based 行号。
   return content.slice(0, index).split(/\r?\n/).length;
+}
+
+export function findTemplateTextFindings(content, filePath = '<inline>') {
+  const nxWorkspaceMatch = content.match(
+    /^Nx workspace with:\r?\n(?:\r?\n)?apps\/web: Rsbuild \+ React \+ React Router \+ Zustand \+ TailwindCSS \+ antd-mobile\r?\napps\/api: NestJS built with TypeScript \(@nx\/js:tsc\)\r?\nJest tests for both applications$/m,
+  );
+
+  if (!nxWorkspaceMatch) {
+    return [];
+  }
+
+  return [
+    buildTemplateTextFinding(
+      filePath,
+      getLineNumber(content, nxWorkspaceMatch.index ?? 0),
+      'contains leftover Nx workspace template text; replace it with project-specific documentation.',
+    ),
+  ];
 }
 
 // 只有 TSX/JSX 文件默认扫描 JSX 注释；测试可以通过 options 强制开关。
@@ -407,6 +436,16 @@ function checkCommentedCode(files) {
     bypasses,
     findings,
   };
+}
+
+function checkTemplateText(files) {
+  return files.flatMap((filePath) => {
+    if (!templateTextScanExtensions.has(extname(filePath))) {
+      return [];
+    }
+
+    return findTemplateTextFindings(readFileSync(filePath, 'utf8'), filePath);
+  });
 }
 
 export function findReactBlockingIssues(content, filePath = '<inline>') {
@@ -747,6 +786,7 @@ function main() {
   // Findings 是阻断项，会让 commit 失败；Warnings 只提醒，不影响退出码。
   const commentResult = checkCommentedCode(stagedFiles);
   const commentFindings = commentResult.findings;
+  const templateTextFindings = checkTemplateText(stagedFiles);
   const reactFindings = checkReactBlockingIssues(stagedFiles);
   const largeFileWarnings = getLargeFileWarnings(stagedFiles);
   const reactWarnings = getReactWarnings(stagedFiles);
@@ -789,6 +829,13 @@ function main() {
     }
   }
 
+  if (templateTextFindings.length > 0) {
+    console.error('❌ Template text leftovers detected:');
+    for (const finding of templateTextFindings) {
+      console.error(`- ${finding}`);
+    }
+  }
+
   if (reactFindings.length > 0) {
     console.error('❌ React staged rule violations detected:');
     for (const finding of reactFindings) {
@@ -802,6 +849,7 @@ function main() {
 
   if (
     commentFindings.length > 0 ||
+    templateTextFindings.length > 0 ||
     reactFindings.length > 0 ||
     prettierStatus !== 0 ||
     eslintStatus !== 0 ||

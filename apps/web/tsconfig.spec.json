@@ -18,6 +18,15 @@
     "src/**/*.spec.js",
     "src/**/*.test.jsx",
     "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "../../test/apps/web/src/**/*.test.ts",
+    "../../test/apps/web/src/**/*.spec.ts",
+    "../../test/apps/web/src/**/*.test.tsx",
+    "../../test/apps/web/src/**/*.spec.tsx",
+    "../../test/apps/web/src/**/*.test.js",
+    "../../test/apps/web/src/**/*.spec.js",
+    "../../test/apps/web/src/**/*.test.jsx",
+    "../../test/apps/web/src/**/*.spec.jsx",
+    "../../test/apps/web/src/**/*.d.ts"
   ]
 }

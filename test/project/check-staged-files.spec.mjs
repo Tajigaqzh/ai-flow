@@ -7,9 +7,10 @@ import {
   findLargeCommentedCodeBlocks,
   findReactBlockingIssues,
   findReactWarnings,
+  findTemplateTextFindings,
   getCompileChecks,
   getLargeFileWarnings,
-} from '../scripts/check-staged-files.mjs';
+} from '../../scripts/check-staged-files.mjs';
 
 const commentedCode = [
   '// const value = 1;',
@@ -174,6 +175,50 @@ const nestedTernary = [
   '}',
 ].join('\n');
 
+const nxWorkspaceTemplateText = [
+  'Nx workspace with:',
+  '',
+  'apps/web: Rsbuild + React + React Router + Zustand + TailwindCSS + antd-mobile',
+  'apps/api: NestJS built with TypeScript (@nx/js:tsc)',
+  'Jest tests for both applications',
+].join('\n');
+const nxWorkspaceTemplateTextWithOffset = [
+  '# README',
+  '',
+  'Nx workspace with:',
+  'apps/web: Rsbuild + React + React Router + Zustand + TailwindCSS + antd-mobile',
+  'apps/api: NestJS built with TypeScript (@nx/js:tsc)',
+  'Jest tests for both applications',
+].join('\n');
+const incompleteNxWorkspaceTemplateTexts = [
+  [
+    'apps/web: Rsbuild + React + React Router + Zustand + TailwindCSS + antd-mobile',
+    'apps/api: NestJS built with TypeScript (@nx/js:tsc)',
+    'Jest tests for both applications',
+  ].join('\n'),
+  [
+    'Nx workspace with:',
+    'apps/api: NestJS built with TypeScript (@nx/js:tsc)',
+    'Jest tests for both applications',
+  ].join('\n'),
+  [
+    'Nx workspace with:',
+    'apps/web: Rsbuild + React + React Router + Zustand + TailwindCSS + antd-mobile',
+    'Jest tests for both applications',
+  ].join('\n'),
+  [
+    'Nx workspace with:',
+    'apps/web: Rsbuild + React + React Router + Zustand + TailwindCSS + antd-mobile',
+    'apps/api: NestJS built with TypeScript (@nx/js:tsc)',
+  ].join('\n'),
+];
+const nxWorkspaceTemplateRuleSource = [
+  'const nxWorkspaceMatch = content.match(/Nx workspace with:/);',
+  "content.includes('apps/web: Rsbuild + React')",
+  "content.includes('apps/api: NestJS built with TypeScript')",
+  "content.includes('Jest tests for both applications')",
+].join('\n');
+
 assert.equal(
   findLargeCommentedCodeBlocks(commentedCode, 'sample.ts').length,
   1,
@@ -256,6 +301,29 @@ assert.equal(findReactBlockingIssues(randomKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(dateNowKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(imageWithoutAlt, 'sample.tsx').length, 1);
 assert.equal(findComplexityWarnings(nestedTernary, 'sample.tsx').length, 1);
+assert.deepEqual(
+  findTemplateTextFindings(nxWorkspaceTemplateText, 'README.md'),
+  [
+    'README.md:1 contains leftover Nx workspace template text; replace it with project-specific documentation.',
+  ],
+);
+assert.deepEqual(
+  findTemplateTextFindings(nxWorkspaceTemplateTextWithOffset, 'README.md'),
+  [
+    'README.md:3 contains leftover Nx workspace template text; replace it with project-specific documentation.',
+  ],
+);
+
+for (const incompleteTemplateText of incompleteNxWorkspaceTemplateTexts) {
+  assert.deepEqual(
+    findTemplateTextFindings(incompleteTemplateText, 'README.md'),
+    [],
+  );
+}
+assert.deepEqual(
+  findTemplateTextFindings(nxWorkspaceTemplateRuleSource, 'scripts/check.mjs'),
+  [],
+);
 
 assert.deepEqual(
   getCompileChecks(['apps/web/src/App.tsx']).map((check) => check.label),

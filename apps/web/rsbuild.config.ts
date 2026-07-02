@@ -1,7 +1,18 @@
 import { defineConfig } from '@rsbuild/core';
 import { pluginLess } from '@rsbuild/plugin-less';
 import { pluginReact } from '@rsbuild/plugin-react';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { loadEnvFile } from 'node:process';
+
+const envPath = resolve(__dirname, '..', '..', '.env');
+
+if (existsSync(envPath)) {
+  loadEnvFile(envPath);
+}
+
+const webHost = process.env.WEB_HOST ?? '127.0.0.1';
+const webPort = Number(process.env.WEB_PORT ?? 4200);
 
 export default defineConfig({
   html: {
@@ -18,7 +29,8 @@ export default defineConfig({
     tsconfigPath: './tsconfig.app.json',
   },
   server: {
-    port: 4200,
+    host: webHost,
+    port: webPort,
   },
   output: {
     copy: [{ from: './src/favicon.ico' }, { from: './src/assets' }],

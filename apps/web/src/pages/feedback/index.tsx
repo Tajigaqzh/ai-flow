@@ -17,7 +17,7 @@ export function FeedbackPage() {
     notification.useNotification();
 
   return (
-    <Space direction="vertical" size={24} className={styles.pageStack}>
+    <Space orientation="vertical" size={24} className={styles.pageStack}>
       {/* staged-check-disable commented-code -- keep Ant Design context holder references */}
       {/*{modalContextHolder}*/}
       {/*{messageContextHolder}*/}
