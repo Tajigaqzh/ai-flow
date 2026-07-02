@@ -103,6 +103,47 @@ const multipleCommentedJsxLines = [
   '}',
 ].join('\n');
 
+const nextLineBypassedJsxComment = [
+  'export function Page() {',
+  '  return (',
+  '    <section>',
+  '      {/* staged-check-disable-next-line commented-code -- keep legacy sample */}',
+  '      {/*',
+  '        <LegacyPanel />',
+  '      */}',
+  '    </section>',
+  '  );',
+  '}',
+].join('\n');
+
+const sameLineBypassedLineComments = [
+  '// staged-check-disable commented-code -- keep migration reference',
+  '// const value = 1;',
+  '// let count = 0;',
+  '// function run() {',
+  '//   return value + count;',
+  '// }',
+  '// staged-check-enable commented-code',
+].join('\n');
+
+const blockBypassedLineComments = [
+  '// staged-check-disable commented-code -- keep long migration reference',
+  '// const value = 1;',
+  '// let count = 0;',
+  '// function run() {',
+  '//   return value + count;',
+  '// }',
+  '// const enabled = true;',
+  '// if (enabled) {',
+  '//   run();',
+  '// }',
+  '// staged-check-enable commented-code',
+].join('\n');
+
+const inlineBlockBypassedComment = [
+  '/* staged-check-disable commented-code -- keep inline reference */ /* const value = 1; */ /* staged-check-enable commented-code */',
+].join('\n');
+
 const indexKeyList = [
   'export function Page({ items }) {',
   '  return items.map((item, index) => <div key={index}>{item.name}</div>);',
@@ -169,6 +210,46 @@ assert.equal(
   findLargeCommentedCodeBlocks(multipleCommentedJsxLines, 'sample.tsx').length,
   6,
 );
+
+const nextLineBypassResult = findLargeCommentedCodeBlocks(
+  nextLineBypassedJsxComment,
+  'sample.tsx',
+  { includeBypasses: true },
+);
+assert.equal(nextLineBypassResult.findings.length, 0);
+assert.deepEqual(nextLineBypassResult.bypasses, [
+  'sample.tsx:5-7 bypassed commented-code: keep legacy sample',
+]);
+
+const sameLineBypassResult = findLargeCommentedCodeBlocks(
+  sameLineBypassedLineComments,
+  'sample.ts',
+  { includeBypasses: true },
+);
+assert.equal(sameLineBypassResult.findings.length, 0);
+assert.deepEqual(sameLineBypassResult.bypasses, [
+  'sample.ts:1-7 bypassed commented-code: keep migration reference',
+]);
+
+const blockBypassResult = findLargeCommentedCodeBlocks(
+  blockBypassedLineComments,
+  'sample.ts',
+  { includeBypasses: true },
+);
+assert.equal(blockBypassResult.findings.length, 0);
+assert.deepEqual(blockBypassResult.bypasses, [
+  'sample.ts:1-11 bypassed commented-code: keep long migration reference',
+]);
+
+const inlineBlockBypassResult = findLargeCommentedCodeBlocks(
+  inlineBlockBypassedComment,
+  'sample.ts',
+  { includeBypasses: true, minCodeLikeLines: 1, minLines: 1 },
+);
+assert.equal(inlineBlockBypassResult.findings.length, 0);
+assert.deepEqual(inlineBlockBypassResult.bypasses, [
+  'sample.ts:1-1 bypassed commented-code: keep inline reference',
+]);
 assert.equal(findReactWarnings(indexKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(indexKeyList, 'sample.tsx').length, 0);
 assert.equal(findReactBlockingIssues(randomKeyList, 'sample.tsx').length, 1);

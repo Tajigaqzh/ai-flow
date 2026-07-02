@@ -11,16 +11,18 @@ import {
 import styles from './index.module.less';
 
 export function FeedbackPage() {
-  const [modal, modalContextHolder] = Modal.useModal();
-  const [messageApi, messageContextHolder] = message.useMessage();
-  const [notificationApi, notificationContextHolder] =
+  const [modal, _modalContextHolder] = Modal.useModal();
+  const [messageApi, _messageContextHolder] = message.useMessage();
+  const [notificationApi, _notificationContextHolder] =
     notification.useNotification();
 
   return (
     <Space direction="vertical" size={24} className={styles.pageStack}>
-      {modalContextHolder}
-      {messageContextHolder}
-      {notificationContextHolder}
+      {/* staged-check-disable commented-code -- keep Ant Design context holder references */}
+      {/*{modalContextHolder}*/}
+      {/*{messageContextHolder}*/}
+      {/*{notificationContextHolder}*/}
+      {/* staged-check-enable commented-code */}
 
       <div>
         <Typography.Title level={2}>反馈弹窗</Typography.Title>

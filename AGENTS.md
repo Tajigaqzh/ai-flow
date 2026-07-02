@@ -61,6 +61,40 @@ commit message 的 type 只允许使用以下类型：
 
 不要在未确认的情况下覆盖已有贡献文档。修改应保持范围收敛，不回退无关工作区变更。优先沿用现有 Nx、React、Ant Design 和 NestJS 约定，避免引入不必要的新抽象。
 
+## Agent 文件编码与 staged 绕过标记
+
+- 始终使用 UTF-8 读取和操作文件，避免中文文档、注释和提交说明出现乱码。
+- staged 检查默认硬拦截被注释掉的代码；如果用户明确要求 agent 绕过指定行注释代码，使用下一行绕过标记，并必须写明原因：
+
+```tsx
+{
+  /* staged-check-disable-next-line commented-code -- 临时保留：等待组件接入 */
+}
+{
+  /* <UserName /> */
+}
+```
+
+- 如果用户明确要求 agent 绕过某一段注释代码字符串，使用成对段落绕过标记，并必须写明原因：
+
+```tsx
+{
+  /* staged-check-disable commented-code -- 文档页需要展示 JSX 示例 */
+}
+{
+  /*
+  <UserName />
+  <UserRole />
+*/
+}
+{
+  /* staged-check-enable commented-code */
+}
+```
+
+- 绕过标记只允许用于 `commented-code` 规则；不得用于规避 React Hooks、危险 key、空 `catch {}`、`==`/`!=`、缺少 `alt` 或外链安全 `rel` 等硬性问题。
+- 执行 staged 检查时，脚本必须用黄色文字输出已绕过的数量和位置信息，便于审计。
+
 ## Agent 提交失败处理规则
 
 - 未经用户明确授权，禁止主动删除、修改或“修复”用户代码；即使代码存在 lint、格式化、未使用变量等问题，也只能报告问题并等待用户决定。

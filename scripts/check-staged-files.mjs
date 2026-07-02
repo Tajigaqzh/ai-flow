@@ -62,6 +62,9 @@ const complexityScanExtensions = new Set(lintExtensions);
 // 文件和函数长度阈值都是“建议值”，超过后只提醒开发者考虑拆分。
 const maxRecommendedFileLines = 1000;
 const maxRecommendedFunctionLines = 80;
+const commentedCodeRuleName = 'commented-code';
+const yellow = '\u001b[33m';
+const reset = '\u001b[0m';
 
 // 统一执行子进程命令；Windows 下通过 shell 兼容 .CMD 脚本。
 // 默认捕获输出，只有调用方明确要求时才直接输出到控制台。
@@ -133,6 +136,10 @@ function buildComplexityWarning(filePath, lineNumber, message) {
   return `${filePath}:${lineNumber} ${message}`;
 }
 
+function buildCommentBypassFinding(filePath, startLine, endLine, reason) {
+  return `${filePath}:${startLine}-${endLine} bypassed ${commentedCodeRuleName}: ${reason}`;
+}
+
 function getLineNumber(content, index) {
   // matchAll 只能给出字符下标，这里转换成用户能直接定位的 1-based 行号。
   return content.slice(0, index).split(/\r?\n/).length;
@@ -143,6 +150,31 @@ function shouldScanJsxComments(filePath, options) {
   return (
     options.scanJsxComments ?? ['.jsx', '.tsx'].includes(extname(filePath))
   );
+}
+
+function parseCommentedCodeBypass(line) {
+  const match = line.match(
+    /staged-check-disable(?:-next-line)?\s+commented-code\s+--\s+(.+?)\s*(?:\*\/\}|\*\/|-->|$)/,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const reason = match[1].trim();
+
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    isNextLine: line.includes('staged-check-disable-next-line'),
+    reason,
+  };
+}
+
+function isCommentedCodeBypassEnable(line) {
+  return line.includes(`staged-check-enable ${commentedCodeRuleName}`);
 }
 
 // JSX 注释形如 `{/* ... */}`，这里先去掉 JSX 外壳，只保留注释内容。
@@ -177,7 +209,10 @@ export function findLargeCommentedCodeBlocks(
   const minLines = options.minLines ?? 5;
   const minCodeLikeLines = options.minCodeLikeLines ?? 3;
   const findings = [];
+  const bypasses = [];
   const lines = content.split(/\r?\n/);
+  const activeBlockBypasses = [];
+  const nextLineBypasses = new Map();
   let inBlockComment = false;
   let blockStart = 0;
   let blockLines = [];
@@ -186,6 +221,32 @@ export function findLargeCommentedCodeBlocks(
   let jsxCommentStart = 0;
   let jsxCommentLines = [];
 
+  function getBypassForRange(startLine, endLine) {
+    const nextLineBypass = nextLineBypasses.get(startLine);
+
+    if (nextLineBypass) {
+      nextLineBypasses.delete(startLine);
+      return nextLineBypass;
+    }
+
+    return activeBlockBypasses.find(
+      (bypass) => bypass.startLine <= startLine && endLine <= bypass.endLine,
+    );
+  }
+
+  function pushFindingOrBypass(startLine, endLine, findingBuilder) {
+    const bypass = getBypassForRange(startLine, endLine);
+
+    if (bypass) {
+      bypasses.push(
+        buildCommentBypassFinding(filePath, startLine, endLine, bypass.reason),
+      );
+      return;
+    }
+
+    findings.push(findingBuilder(filePath, startLine, endLine));
+  }
+
   // 连续 `//` 或 `#` 注释需要等遇到非注释行后再统一判断。
   function flushLineComments(endLine) {
     // 连续行注释只有在规模足够且具备明显代码特征时才视为问题。
@@ -193,7 +254,7 @@ export function findLargeCommentedCodeBlocks(
       lineCommentLines.length >= minLines &&
       lineCommentLines.filter(isCodeLikeCommentLine).length >= minCodeLikeLines
     ) {
-      findings.push(buildFinding(filePath, lineCommentStart, endLine));
+      pushFindingOrBypass(lineCommentStart, endLine, buildFinding);
     }
 
     lineCommentLines = [];
@@ -207,7 +268,7 @@ export function findLargeCommentedCodeBlocks(
       blockLines.length >= minLines &&
       blockLines.filter(isCodeLikeCommentLine).length >= minCodeLikeLines
     ) {
-      findings.push(buildFinding(filePath, blockStart, endLine));
+      pushFindingOrBypass(blockStart, endLine, buildFinding);
     }
 
     blockLines = [];
@@ -217,6 +278,29 @@ export function findLargeCommentedCodeBlocks(
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
     const trimmed = line.trim();
+    const bypassDirective = parseCommentedCodeBypass(line);
+
+    if (bypassDirective) {
+      if (bypassDirective.isNextLine) {
+        nextLineBypasses.set(lineNumber + 1, {
+          reason: bypassDirective.reason,
+        });
+      } else {
+        activeBlockBypasses.push({
+          reason: bypassDirective.reason,
+          startLine: lineNumber,
+          endLine: Number.POSITIVE_INFINITY,
+        });
+      }
+    }
+
+    if (isCommentedCodeBypassEnable(line)) {
+      const activeBypass = activeBlockBypasses.at(-1);
+
+      if (activeBypass) {
+        activeBypass.endLine = lineNumber;
+      }
+    }
 
     if (shouldScanJsxComments(filePath, options)) {
       // TSX/JSX 中允许普通文字注释，但禁止空注释和被注释掉的 JSX/代码。
@@ -233,8 +317,10 @@ export function findLargeCommentedCodeBlocks(
       if (jsxCommentStart > 0 && line.includes('*/}')) {
         // 单行和多行 JSX 注释都在结束行统一判断，方便输出准确行号。
         if (isProblematicJsxComment(jsxCommentLines)) {
-          findings.push(
-            buildJsxCommentFinding(filePath, jsxCommentStart, lineNumber),
+          pushFindingOrBypass(
+            jsxCommentStart,
+            lineNumber,
+            buildJsxCommentFinding,
           );
         }
 
@@ -287,21 +373,40 @@ export function findLargeCommentedCodeBlocks(
     flushBlockComments(lines.length);
   }
 
+  if (options.includeBypasses) {
+    return {
+      bypasses,
+      findings,
+    };
+  }
+
   return findings;
 }
 
 function checkCommentedCode(files) {
-  return files.flatMap((filePath) => {
+  const findings = [];
+  const bypasses = [];
+
+  for (const filePath of files) {
     // 只扫描文本代码类文件；未知文件交给 Prettier 的 --ignore-unknown 处理。
     if (!commentScanExtensions.has(extname(filePath))) {
-      return [];
+      continue;
     }
 
-    return findLargeCommentedCodeBlocks(
+    const result = findLargeCommentedCodeBlocks(
       readFileSync(filePath, 'utf8'),
       filePath,
+      { includeBypasses: true },
     );
-  });
+
+    findings.push(...result.findings);
+    bypasses.push(...result.bypasses);
+  }
+
+  return {
+    bypasses,
+    findings,
+  };
 }
 
 export function findReactBlockingIssues(content, filePath = '<inline>') {
@@ -640,7 +745,8 @@ function main() {
 
   // 先收集并输出所有检查类别的问题，再统一返回失败，方便一次性修复。
   // Findings 是阻断项，会让 commit 失败；Warnings 只提醒，不影响退出码。
-  const commentFindings = checkCommentedCode(stagedFiles);
+  const commentResult = checkCommentedCode(stagedFiles);
+  const commentFindings = commentResult.findings;
   const reactFindings = checkReactBlockingIssues(stagedFiles);
   const largeFileWarnings = getLargeFileWarnings(stagedFiles);
   const reactWarnings = getReactWarnings(stagedFiles);
@@ -664,6 +770,15 @@ function main() {
     console.warn('⚠️ Complexity warnings detected:');
     for (const warning of complexityWarnings) {
       console.warn(`- ${warning}`);
+    }
+  }
+
+  if (commentResult.bypasses.length > 0) {
+    console.warn(
+      `${yellow}⚠️ Commented code bypasses detected (${commentResult.bypasses.length}):${reset}`,
+    );
+    for (const bypass of commentResult.bypasses) {
+      console.warn(`${yellow}- ${bypass}${reset}`);
     }
   }
 
