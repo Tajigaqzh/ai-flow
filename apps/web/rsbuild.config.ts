@@ -13,6 +13,8 @@ if (existsSync(envPath)) {
 
 const webHost = process.env.WEB_HOST ?? '127.0.0.1';
 const webPort = Number(process.env.WEB_PORT ?? 4200);
+const apiHost = process.env.API_HOST ?? '127.0.0.1';
+const apiPort = Number(process.env.API_PORT ?? 3000);
 
 export default defineConfig({
   html: {
@@ -31,6 +33,9 @@ export default defineConfig({
   server: {
     host: webHost,
     port: webPort,
+    proxy: {
+      '/api': `http://${apiHost}:${apiPort}`,
+    },
   },
   output: {
     copy: [{ from: './src/favicon.ico' }, { from: './src/assets' }],

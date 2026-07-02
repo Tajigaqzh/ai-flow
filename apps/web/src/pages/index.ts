@@ -1,3 +1,4 @@
+export { ChatPage } from './chat';
 export { FeedbackPage } from './feedback';
 export { FormPage } from './form';
 export { HomePage } from './home';

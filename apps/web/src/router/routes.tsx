@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import { FeedbackPage, FormPage, HomePage, TablePage } from '@/pages';
+import { ChatPage, FeedbackPage, FormPage, HomePage, TablePage } from '@/pages';
 
 export type AppRoute = {
   path: string;
@@ -30,5 +30,10 @@ export const appRoutes: AppRoute[] = [
     path: 'feedback',
     label: '反馈弹窗',
     element: <FeedbackPage />,
+  },
+  {
+    path: 'chat',
+    label: 'AI 聊天',
+    element: <ChatPage />,
   },
 ];
