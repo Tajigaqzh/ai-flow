@@ -17,6 +17,7 @@
  * - TypeScript/TSX/JSX 编译检查失败。
  * - 大段被注释掉的代码，包含 JSX 中被注释掉的组件或空 JS 注释。
  * - React 列表 key 使用 `index`、`Math.random()` 或 `Date.now()`。
+ * - 三元表达式中重复调用同一个函数。
  * - React 基础可访问性问题：`<img>` 缺少 alt。
  * - 安全问题：`target="_blank"` 缺少 `rel="noreferrer"` 或 `rel="noopener"`。
  *
@@ -148,6 +149,10 @@ function buildCommentBypassFinding(filePath, startLine, endLine, reason) {
 
 function buildTemplateTextFinding(filePath, lineNumber, message) {
   return `${filePath}:${lineNumber} ${message}`;
+}
+
+function buildRepeatedTernaryCallFinding(filePath, lineNumber, functionName) {
+  return `${filePath}:${lineNumber} repeats ${functionName}() inside a ternary expression; assign it to a variable before the ternary.`;
 }
 
 function getLineNumber(content, index) {
@@ -597,6 +602,118 @@ function getFunctionName(line) {
   return null;
 }
 
+function stripLiteralContent(line) {
+  return line
+    .replace(/'[^'\\]*(?:\\.[^'\\]*)*'/g, '')
+    .replace(/"[^"\\]*(?:\\.[^"\\]*)*"/g, '')
+    .replace(/`[^`\\]*(?:\\.[^`\\]*)*`/g, '')
+    .replace(/(^\s*|[=(:,[!~&|?{};])\/(?:\\.|[^/\\\r\n])+\/[dgimsuvy]*/g, '$1');
+}
+
+function countTernaryOperators(line) {
+  const scanLine = stripLiteralContent(line);
+  let count = 0;
+
+  for (let index = 0; index < scanLine.length; index += 1) {
+    if (scanLine[index] !== '?') {
+      continue;
+    }
+
+    const previousChar = scanLine[index - 1];
+    const nextChar = scanLine[index + 1];
+
+    if (previousChar === '?' || nextChar === '?' || nextChar === '.') {
+      continue;
+    }
+
+    if (scanLine.slice(index + 1).includes(':')) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+function getFirstTernaryQuestionIndex(line) {
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== '?') {
+      continue;
+    }
+
+    const previousChar = line[index - 1];
+    const nextChar = line[index + 1];
+
+    if (previousChar === '?' || nextChar === '?' || nextChar === '.') {
+      continue;
+    }
+
+    if (line.slice(index + 1).includes(':')) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function getCalledFunctionNames(expression) {
+  const ignoredNames = new Set([
+    'catch',
+    'for',
+    'function',
+    'if',
+    'return',
+    'switch',
+    'while',
+  ]);
+  const names = [];
+
+  for (const match of expression.matchAll(
+    /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\(/g,
+  )) {
+    const functionName = match[1];
+
+    if (!ignoredNames.has(functionName)) {
+      names.push(functionName);
+    }
+  }
+
+  return names;
+}
+
+export function findRepeatedTernaryCallFindings(
+  content,
+  filePath = '<inline>',
+) {
+  const findings = [];
+
+  content.split(/\r?\n/).forEach((line, index) => {
+    const scanLine = stripLiteralContent(line);
+    const questionIndex = getFirstTernaryQuestionIndex(scanLine);
+
+    if (questionIndex === -1) {
+      return;
+    }
+
+    const conditionCalls = new Set(
+      getCalledFunctionNames(scanLine.slice(0, questionIndex)),
+    );
+    const branchCalls = getCalledFunctionNames(
+      scanLine.slice(questionIndex + 1),
+    );
+    const repeatedCall = branchCalls.find((functionName) =>
+      conditionCalls.has(functionName),
+    );
+
+    if (repeatedCall) {
+      findings.push(
+        buildRepeatedTernaryCallFinding(filePath, index + 1, repeatedCall),
+      );
+    }
+  });
+
+  return findings;
+}
+
 export function findComplexityWarnings(
   content,
   filePath = '<inline>',
@@ -611,10 +728,10 @@ export function findComplexityWarnings(
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
-    const ternaryCount = (line.match(/\?/g) ?? []).length;
+    const ternaryCount = countTernaryOperators(line);
 
     // 嵌套三元通常会显著降低 JSX 可读性；这里只警告，避免误伤合法表达式。
-    if (ternaryCount >= 2 && line.includes(':')) {
+    if (ternaryCount >= 2) {
       warnings.push(
         buildComplexityWarning(
           filePath,
@@ -673,6 +790,19 @@ function getComplexityWarnings(files) {
     }
 
     return findComplexityWarnings(readFileSync(filePath, 'utf8'), filePath);
+  });
+}
+
+function checkRepeatedTernaryCalls(files) {
+  return files.flatMap((filePath) => {
+    if (!complexityScanExtensions.has(extname(filePath))) {
+      return [];
+    }
+
+    return findRepeatedTernaryCallFindings(
+      readFileSync(filePath, 'utf8'),
+      filePath,
+    );
   });
 }
 
@@ -765,6 +895,73 @@ function runCompileChecks(files) {
   return failed ? 1 : 0;
 }
 
+function logIssueList(log, title, issues) {
+  if (issues.length === 0) {
+    return;
+  }
+
+  log(title);
+  issues.forEach((issue) => log(`- ${issue}`));
+}
+
+function collectStagedCheckResults(stagedFiles) {
+  const commentResult = checkCommentedCode(stagedFiles); // 注释代码检查结果
+
+  return {
+    commentBypasses: commentResult.bypasses, // 注释代码绕过记录
+    commentFindings: commentResult.findings, // 注释代码阻断问题
+    complexityWarnings: getComplexityWarnings(stagedFiles), // 复杂度非阻断警告
+    largeFileWarnings: getLargeFileWarnings(stagedFiles), // 大文件非阻断警告
+    reactFindings: checkReactBlockingIssues(stagedFiles), // React 阻断问题
+    reactWarnings: getReactWarnings(stagedFiles), // React 非阻断警告
+    repeatedTernaryCallFindings: checkRepeatedTernaryCalls(stagedFiles), // 三元表达式重复调用阻断问题
+    templateTextFindings: checkTemplateText(stagedFiles), // 模板残留文案阻断问题
+  };
+}
+
+function reportStagedCheckResults(results) {
+  const warnings = [
+    ['⚠️ Large staged files detected:', results.largeFileWarnings],
+    ['⚠️ React warnings detected:', results.reactWarnings],
+    ['⚠️ Complexity warnings detected:', results.complexityWarnings],
+  ];
+  const findings = [
+    ['❌ Large commented code blocks detected:', results.commentFindings],
+    ['❌ Template text leftovers detected:', results.templateTextFindings],
+    ['❌ React staged rule violations detected:', results.reactFindings],
+    [
+      '❌ Repeated ternary function calls detected:',
+      results.repeatedTernaryCallFindings,
+    ],
+  ];
+
+  for (const [title, issues] of warnings) {
+    logIssueList(console.warn, title, issues);
+  }
+
+  if (results.commentBypasses.length > 0) {
+    console.warn(
+      `${yellow}⚠️ Commented code bypasses detected (${results.commentBypasses.length}):${reset}`,
+    );
+    for (const bypass of results.commentBypasses) {
+      console.warn(`${yellow}- ${bypass}${reset}`);
+    }
+  }
+
+  for (const [title, issues] of findings) {
+    logIssueList(console.error, title, issues);
+  }
+}
+
+function hasBlockingFindings(results) {
+  return (
+    results.commentFindings.length > 0 ||
+    results.templateTextFindings.length > 0 ||
+    results.reactFindings.length > 0 ||
+    results.repeatedTernaryCallFindings.length > 0
+  );
+}
+
 function main() {
   const stagedFiles = getStagedFiles();
 
@@ -777,73 +974,15 @@ function main() {
 
   // 先收集并输出所有检查类别的问题，再统一返回失败，方便一次性修复。
   // Findings 是阻断项，会让 commit 失败；Warnings 只提醒，不影响退出码。
-  const commentResult = checkCommentedCode(stagedFiles);
-  const commentFindings = commentResult.findings;
-  const templateTextFindings = checkTemplateText(stagedFiles);
-  const reactFindings = checkReactBlockingIssues(stagedFiles);
-  const largeFileWarnings = getLargeFileWarnings(stagedFiles);
-  const reactWarnings = getReactWarnings(stagedFiles);
-  const complexityWarnings = getComplexityWarnings(stagedFiles);
-
-  if (largeFileWarnings.length > 0) {
-    console.warn('⚠️ Large staged files detected:');
-    for (const warning of largeFileWarnings) {
-      console.warn(`- ${warning}`);
-    }
-  }
-
-  if (reactWarnings.length > 0) {
-    console.warn('⚠️ React warnings detected:');
-    for (const warning of reactWarnings) {
-      console.warn(`- ${warning}`);
-    }
-  }
-
-  if (complexityWarnings.length > 0) {
-    console.warn('⚠️ Complexity warnings detected:');
-    for (const warning of complexityWarnings) {
-      console.warn(`- ${warning}`);
-    }
-  }
-
-  if (commentResult.bypasses.length > 0) {
-    console.warn(
-      `${yellow}⚠️ Commented code bypasses detected (${commentResult.bypasses.length}):${reset}`,
-    );
-    for (const bypass of commentResult.bypasses) {
-      console.warn(`${yellow}- ${bypass}${reset}`);
-    }
-  }
-
-  if (commentFindings.length > 0) {
-    console.error('❌ Large commented code blocks detected:');
-    for (const finding of commentFindings) {
-      console.error(`- ${finding}`);
-    }
-  }
-
-  if (templateTextFindings.length > 0) {
-    console.error('❌ Template text leftovers detected:');
-    for (const finding of templateTextFindings) {
-      console.error(`- ${finding}`);
-    }
-  }
-
-  if (reactFindings.length > 0) {
-    console.error('❌ React staged rule violations detected:');
-    for (const finding of reactFindings) {
-      console.error(`- ${finding}`);
-    }
-  }
+  const results = collectStagedCheckResults(stagedFiles);
+  reportStagedCheckResults(results);
 
   const prettierStatus = runPrettier(stagedFiles);
   const eslintStatus = runEslint(stagedFiles);
   const compileStatus = runCompileChecks(stagedFiles);
 
   if (
-    commentFindings.length > 0 ||
-    templateTextFindings.length > 0 ||
-    reactFindings.length > 0 ||
+    hasBlockingFindings(results) ||
     prettierStatus !== 0 ||
     eslintStatus !== 0 ||
     compileStatus !== 0

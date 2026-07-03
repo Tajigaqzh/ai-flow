@@ -140,6 +140,20 @@ assertLintFails(
 );
 
 assertLintFails(
+  'react-hooks-missing-dependency.tsx',
+  [
+    'import { useEffect } from "react";',
+    'export function Page({ count }: { count: number }) {',
+    '  useEffect(() => {',
+    '    document.title = String(count);',
+    '  }, []);',
+    '  return null;',
+    '}',
+  ].join('\n'),
+  'React Hook useEffect has a missing dependency',
+);
+
+assertLintFails(
   'no-empty-catch.ts',
   ['try {', '  throw new Error("failed");', '} catch (error) {', '}'].join(
     '\n',
@@ -291,6 +305,23 @@ assertLintFails(
 );
 
 assertLintFails(
+  'use-effect-set-interval-empty-cleanup.tsx',
+  [
+    'import { useEffect } from "react";',
+    'export function Page() {',
+    '  useEffect(() => {',
+    '    const timerId = setInterval(() => Date.now(), 1000);',
+    '    return () => {',
+    '      void timerId;',
+    '    };',
+    '  }, []);',
+    '  return null;',
+    '}',
+  ].join('\n'),
+  'cleanup must call clearInterval or clearTimeout',
+);
+
+assertLintFails(
   'use-effect-set-timeout-cleanup.tsx',
   [
     'import { useEffect } from "react";',
@@ -302,6 +333,41 @@ assertLintFails(
     '}',
   ].join('\n'),
   'must return a cleanup function',
+);
+
+assertLintFails(
+  'use-effect-echarts-cleanup.tsx',
+  [
+    'import { useEffect } from "react";',
+    'import * as echarts from "echarts";',
+    'export function Page({ element }: { element: HTMLDivElement }) {',
+    '  useEffect(() => {',
+    '    const chart = echarts.init(element);',
+    '    chart.setOption({});',
+    '  }, [element]);',
+    '  return null;',
+    '}',
+  ].join('\n'),
+  'must return a cleanup function',
+);
+
+assertLintFails(
+  'use-effect-echarts-empty-cleanup.tsx',
+  [
+    'import { useEffect } from "react";',
+    'import * as echarts from "echarts";',
+    'export function Page({ element }: { element: HTMLDivElement }) {',
+    '  useEffect(() => {',
+    '    const chart = echarts.init(element);',
+    '    chart.setOption({});',
+    '    return () => {',
+    '      void chart;',
+    '    };',
+    '  }, [element]);',
+    '  return null;',
+    '}',
+  ].join('\n'),
+  'cleanup must dispose it',
 );
 
 assertLintFails(
@@ -370,6 +436,41 @@ assertLintFails(
     'export const Page = () => PageLoading;',
   ].join('\n'),
   'Imported component PageLoading must be rendered as JSX',
+);
+
+assertLintFails(
+  'no-nested-component-definition.tsx',
+  [
+    'export function Page() {',
+    '  function Toolbar() {',
+    '    return <nav>Tools</nav>;',
+    '  }',
+    '  return <Toolbar />;',
+    '}',
+  ].join('\n'),
+  'Do not define component Toolbar inside another component',
+);
+
+assertLintFails(
+  'no-nested-component-arrow-definition.tsx',
+  [
+    'export function Page() {',
+    '  const Toolbar = () => <nav>Tools</nav>;',
+    '  return <Toolbar />;',
+    '}',
+  ].join('\n'),
+  'Do not define component Toolbar inside another component',
+);
+
+assertLintFails(
+  'no-update-expression-jsx-key.tsx',
+  [
+    'export function Page({ items }: { items: string[] }) {',
+    '  let keyValue = 0;',
+    '  return items.map((item) => <div key={keyValue++}>{item}</div>);',
+    '}',
+  ].join('\n'),
+  'Do not mutate values inside JSX key',
 );
 
 lintSource(
@@ -479,6 +580,34 @@ lintSource(
     '    return () => window.clearTimeout(timerId);',
     '  }, []);',
     '  return null;',
+    '}',
+  ].join('\n'),
+);
+
+lintSource(
+  'allow-use-effect-echarts-dispose.tsx',
+  [
+    'import { useEffect } from "react";',
+    'import * as echarts from "echarts";',
+    'export function Page({ element }: { element: HTMLDivElement }) {',
+    '  useEffect(() => {',
+    '    const chart = echarts.init(element);',
+    '    chart.setOption({});',
+    '    return () => chart.dispose();',
+    '  }, [element]);',
+    '  return null;',
+    '}',
+  ].join('\n'),
+);
+
+lintSource(
+  'allow-top-level-component-definition.tsx',
+  [
+    'function Toolbar() {',
+    '  return <nav>Tools</nav>;',
+    '}',
+    'export function Page() {',
+    '  return <Toolbar />;',
     '}',
   ].join('\n'),
 );

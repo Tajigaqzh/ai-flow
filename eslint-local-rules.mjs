@@ -20,6 +20,21 @@ function getFunctionBodyStatements(node) {
   return node.body.body;
 }
 
+function getCalleePropertyName(node) {
+  if (node?.callee?.type === 'Identifier') {
+    return node.callee.name;
+  }
+
+  if (
+    node?.callee?.type === 'MemberExpression' &&
+    node.callee.property?.type === 'Identifier'
+  ) {
+    return node.callee.property.name;
+  }
+
+  return null;
+}
+
 function hasNodeMatching(node, predicate, seen = new WeakSet()) {
   if (!node || typeof node !== 'object') {
     return false;
@@ -73,25 +88,55 @@ function containsTimerRegistration(node) {
   return hasNodeMatching(
     node,
     (currentNode) =>
-      (currentNode.type === 'CallExpression' &&
-        currentNode.callee?.type === 'Identifier' &&
-        ['setInterval', 'setTimeout'].includes(currentNode.callee.name)) ||
-      (currentNode.type === 'CallExpression' &&
-        currentNode.callee?.type === 'MemberExpression' &&
-        currentNode.callee.property?.type === 'Identifier' &&
-        ['setInterval', 'setTimeout'].includes(
-          currentNode.callee.property.name,
-        )),
+      currentNode.type === 'CallExpression' &&
+      ['setInterval', 'setTimeout'].includes(
+        getCalleePropertyName(currentNode),
+      ),
   );
 }
 
-function hasCleanupReturn(statements) {
-  return statements.some(
+function getCleanupReturn(statements) {
+  return statements.find(
     (statement) =>
       statement.type === 'ReturnStatement' &&
       ['ArrowFunctionExpression', 'FunctionExpression'].includes(
         statement.argument?.type,
       ),
+  );
+}
+
+function containsTimerCleanup(node) {
+  return hasNodeMatching(
+    node,
+    (currentNode) =>
+      currentNode.type === 'CallExpression' &&
+      ['clearInterval', 'clearTimeout'].includes(
+        getCalleePropertyName(currentNode),
+      ),
+  );
+}
+
+function containsEchartsInit(node) {
+  return hasNodeMatching(
+    node,
+    (currentNode) =>
+      currentNode.type === 'CallExpression' &&
+      currentNode.callee?.type === 'MemberExpression' &&
+      currentNode.callee.object?.type === 'Identifier' &&
+      currentNode.callee.object.name === 'echarts' &&
+      currentNode.callee.property?.type === 'Identifier' &&
+      currentNode.callee.property.name === 'init',
+  );
+}
+
+function containsEchartsDispose(node) {
+  return hasNodeMatching(
+    node,
+    (currentNode) =>
+      currentNode.type === 'CallExpression' &&
+      currentNode.callee?.type === 'MemberExpression' &&
+      currentNode.callee.property?.type === 'Identifier' &&
+      currentNode.callee.property.name === 'dispose',
   );
 }
 
@@ -105,6 +150,10 @@ const requireUseEffectListenerCleanup = {
     messages: {
       missingCleanup:
         'useEffect registers an event listener or timer and must return a cleanup function.',
+      missingTimerCleanup:
+        'useEffect registers a timer and cleanup must call clearInterval or clearTimeout.',
+      missingEchartsDispose:
+        'useEffect initializes an ECharts instance and cleanup must dispose it.',
     },
     schema: [],
   },
@@ -122,14 +171,35 @@ const requireUseEffectListenerCleanup = {
           return;
         }
 
+        const hasListenerRegistration = containsListenerRegistration(
+          callback.body,
+        );
+        const hasTimerRegistration = containsTimerRegistration(callback.body);
+        const hasChartInit = containsEchartsInit(callback.body);
+        const cleanupReturn = getCleanupReturn(statements);
+
         if (
-          (containsListenerRegistration(callback.body) ||
-            containsTimerRegistration(callback.body)) &&
-          !hasCleanupReturn(statements)
+          (hasListenerRegistration || hasTimerRegistration || hasChartInit) &&
+          !cleanupReturn
         ) {
           context.report({
             node,
             messageId: 'missingCleanup',
+          });
+          return;
+        }
+
+        if (hasTimerRegistration && !containsTimerCleanup(cleanupReturn)) {
+          context.report({
+            node,
+            messageId: 'missingTimerCleanup',
+          });
+        }
+
+        if (hasChartInit && !containsEchartsDispose(cleanupReturn)) {
+          context.report({
+            node,
+            messageId: 'missingEchartsDispose',
           });
         }
       },
@@ -181,6 +251,24 @@ const noEmptyHookCallback = {
 
 function isPascalCaseName(name) {
   return /^[A-Z]/.test(name);
+}
+
+function getFunctionComponentName(node) {
+  if (node.type === 'FunctionDeclaration') {
+    return node.id?.name;
+  }
+
+  const parent = node.parent;
+
+  if (
+    ['ArrowFunctionExpression', 'FunctionExpression'].includes(node.type) &&
+    parent?.type === 'VariableDeclarator' &&
+    parent.id?.type === 'Identifier'
+  ) {
+    return parent.id.name;
+  }
+
+  return null;
 }
 
 const noDirectImportedComponentReferenceInRender = {
@@ -255,11 +343,98 @@ const noDirectImportedComponentReferenceInRender = {
   },
 };
 
+const noNestedComponentDefinition = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'disallow defining child components inside components',
+    },
+    messages: {
+      nestedComponent:
+        'Do not define component {{componentName}} inside another component; move it to module scope.',
+    },
+    schema: [],
+  },
+  create(context) {
+    const componentStack = [];
+
+    function enterFunction(node) {
+      const componentName = getFunctionComponentName(node);
+      const isComponent = componentName && isPascalCaseName(componentName);
+
+      if (isComponent && componentStack.length > 0) {
+        context.report({
+          node,
+          messageId: 'nestedComponent',
+          data: {
+            componentName,
+          },
+        });
+      }
+
+      componentStack.push(isComponent);
+    }
+
+    function exitFunction() {
+      componentStack.pop();
+    }
+
+    return {
+      ArrowFunctionExpression: enterFunction,
+      'ArrowFunctionExpression:exit': exitFunction,
+      FunctionDeclaration: enterFunction,
+      'FunctionDeclaration:exit': exitFunction,
+      FunctionExpression: enterFunction,
+      'FunctionExpression:exit': exitFunction,
+    };
+  },
+};
+
+const noUnstableJsxKeyExpression = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'disallow JSX key expressions that mutate values',
+    },
+    messages: {
+      unstableKey:
+        'Do not mutate values inside JSX key; use a stable business id.',
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXAttribute(node) {
+        if (
+          node.name?.name !== 'key' ||
+          node.value?.type !== 'JSXExpressionContainer'
+        ) {
+          return;
+        }
+
+        const expression = node.value.expression;
+
+        if (
+          expression?.type === 'UpdateExpression' ||
+          expression?.type === 'AssignmentExpression'
+        ) {
+          context.report({
+            node,
+            messageId: 'unstableKey',
+          });
+        }
+      },
+    };
+  },
+};
+
 export default {
   rules: {
+    'no-nested-component-definition': noNestedComponentDefinition,
     'no-direct-imported-component-reference-in-render':
       noDirectImportedComponentReferenceInRender,
     'no-empty-hook-callback': noEmptyHookCallback,
+    'no-unstable-jsx-key-expression': noUnstableJsxKeyExpression,
     'require-use-effect-listener-cleanup': requireUseEffectListenerCleanup,
   },
 };

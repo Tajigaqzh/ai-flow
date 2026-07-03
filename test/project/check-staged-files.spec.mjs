@@ -7,6 +7,7 @@ import {
   findLargeCommentedCodeBlocks,
   findReactBlockingIssues,
   findReactWarnings,
+  findRepeatedTernaryCallFindings,
   findTemplateTextFindings,
   getCompileChecks,
   getLargeFileWarnings,
@@ -175,6 +176,29 @@ const nestedTernary = [
   '}',
 ].join('\n');
 
+const nullishAndOptionalSyntax = [
+  'function run(options) {',
+  "  return options.output?.stdio ?? 'pipe';",
+  '}',
+].join('\n');
+
+const regexWithQuestionTokens = [
+  'const templatePattern =',
+  '  /^Nx workspace with:\\r?\\n(?:\\r?\\n)?apps\\/web: Rsbuild \\+ React$/m;',
+].join('\n');
+
+const repeatedTernaryCall = [
+  'function renderName() {',
+  '  return getName() === 1 ? getName() : 2;',
+  '}',
+].join('\n');
+
+const singleTernaryBranchCall = [
+  'function renderName(isReady) {',
+  '  return isReady ? getName() : 2;',
+  '}',
+].join('\n');
+
 const nxWorkspaceTemplateText = [
   'Nx workspace with:',
   '',
@@ -303,6 +327,24 @@ assert.equal(findReactBlockingIssues(randomKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(dateNowKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(imageWithoutAlt, 'sample.tsx').length, 1);
 assert.equal(findComplexityWarnings(nestedTernary, 'sample.tsx').length, 1);
+assert.equal(
+  findComplexityWarnings(nullishAndOptionalSyntax, 'sample.ts').length,
+  0,
+);
+assert.equal(
+  findComplexityWarnings(regexWithQuestionTokens, 'sample.ts').length,
+  0,
+);
+assert.deepEqual(
+  findRepeatedTernaryCallFindings(repeatedTernaryCall, 'sample.ts'),
+  [
+    'sample.ts:2 repeats getName() inside a ternary expression; assign it to a variable before the ternary.',
+  ],
+);
+assert.equal(
+  findRepeatedTernaryCallFindings(singleTernaryBranchCall, 'sample.ts').length,
+  0,
+);
 assert.deepEqual(
   findTemplateTextFindings(nxWorkspaceTemplateText, 'README.md'),
   [

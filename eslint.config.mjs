@@ -92,9 +92,13 @@ export default [
       ],
       'local/no-direct-imported-component-reference-in-render': 'error',
       'local/no-empty-hook-callback': 'error',
+      'local/no-nested-component-definition': 'error',
+      'local/no-unstable-jsx-key-expression': 'error',
       'local/require-use-effect-listener-cleanup': 'error',
       // React Hooks 只能在组件或自定义 Hook 顶层调用，条件/循环/普通函数中调用会导致运行时状态错位。
       'react-hooks/rules-of-hooks': 'error',
+      // useEffect/useCallback/useMemo 依赖必须完整，避免读取旧闭包。
+      'react-hooks/exhaustive-deps': 'error',
       'react-local/jsx-first-prop-new-line': ['error', 'multiline'],
       'react-local/jsx-indent': ['error', 2],
       'react-local/jsx-indent-props': ['error', 2],
