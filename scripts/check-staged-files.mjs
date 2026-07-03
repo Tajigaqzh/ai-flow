@@ -16,13 +16,12 @@
  * - ESLint 检查失败，例如未使用变量、var、显式 any、console/debugger、空函数等。
  * - TypeScript/TSX/JSX 编译检查失败。
  * - 大段被注释掉的代码，包含 JSX 中被注释掉的组件或空 JS 注释。
- * - React 列表 key 使用 `Math.random()` 或 `Date.now()`。
+ * - React 列表 key 使用 `index`、`Math.random()` 或 `Date.now()`。
  * - React 基础可访问性问题：`<img>` 缺少 alt。
  * - 安全问题：`target="_blank"` 缺少 `rel="noreferrer"` 或 `rel="noopener"`。
  *
  * 仅警告不中断：
  * - 单个 staged 文件超过 1000 行。
- * - `key={index}`，因为静态列表存在合理例外。
  * - 函数超过建议行数。
  * - 疑似嵌套三元表达式。
  */
@@ -451,9 +450,20 @@ function checkTemplateText(files) {
 export function findReactBlockingIssues(content, filePath = '<inline>') {
   const findings = [];
 
-  // 这里放“明确应该阻断提交”的 React 问题；有合理例外的规则不要放进来。
+  // 这里放“明确应该阻断提交”的 React 问题。
   content.split(/\r?\n/).forEach((line, index) => {
     const lineNumber = index + 1;
+
+    // key={index} 在列表变更时容易导致节点复用错误，提交阶段统一要求使用稳定业务 key。
+    if (/key\s*=\s*\{\s*index\s*\}/.test(line)) {
+      findings.push(
+        buildReactFinding(
+          filePath,
+          lineNumber,
+          'uses key={index}; use a stable business id.',
+        ),
+      );
+    }
 
     // Math.random()/Date.now() 每次 render 都会生成新 key，导致列表节点被反复销毁重建。
     if (/key\s*=\s*\{\s*(?:Math\.random|Date\.now)\s*\(\s*\)\s*\}/.test(line)) {
@@ -505,26 +515,9 @@ export function findReactBlockingIssues(content, filePath = '<inline>') {
   return findings;
 }
 
-export function findReactWarnings(content, filePath = '<inline>') {
-  const warnings = [];
-
-  // 这里放 React warning：提示风险但不中断 commit。
-  content.split(/\r?\n/).forEach((line, index) => {
-    const lineNumber = index + 1;
-
-    // key={index} 有静态列表等合理场景，所以只警告不中断提交。
-    if (/key\s*=\s*\{\s*index\s*\}/.test(line)) {
-      warnings.push(
-        buildComplexityWarning(
-          filePath,
-          lineNumber,
-          'uses key={index}; prefer a stable business id when the list can change.',
-        ),
-      );
-    }
-  });
-
-  return warnings;
+export function findReactWarnings() {
+  // React warning 只保留非阻断提示；危险 key 统一由 findReactBlockingIssues 硬拦截。
+  return [];
 }
 
 function checkReactBlockingIssues(files) {

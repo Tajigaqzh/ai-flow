@@ -295,8 +295,10 @@ assert.equal(inlineBlockBypassResult.findings.length, 0);
 assert.deepEqual(inlineBlockBypassResult.bypasses, [
   'sample.ts:1-1 bypassed commented-code: keep inline reference',
 ]);
-assert.equal(findReactWarnings(indexKeyList, 'sample.tsx').length, 1);
-assert.equal(findReactBlockingIssues(indexKeyList, 'sample.tsx').length, 0);
+assert.equal(findReactWarnings(indexKeyList, 'sample.tsx').length, 0);
+assert.deepEqual(findReactBlockingIssues(indexKeyList, 'sample.tsx'), [
+  'sample.tsx:2 uses key={index}; use a stable business id.',
+]);
 assert.equal(findReactBlockingIssues(randomKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(dateNowKeyList, 'sample.tsx').length, 1);
 assert.equal(findReactBlockingIssues(imageWithoutAlt, 'sample.tsx').length, 1);
