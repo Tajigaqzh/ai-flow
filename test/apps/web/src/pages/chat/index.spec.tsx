@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  ChatMarkdown,
   ChatPage,
   buildChatRequest,
   getPersistableChatMessages,
@@ -17,6 +18,36 @@ describe('ChatPage', () => {
     expect(html).toContain('你好，我是项目内置 AI 助手。');
     expect(html).toContain('输入你想让 AI 帮你处理的问题');
     expect(html).toMatch(/发\s*送/);
+  });
+
+  // 正常场景：AI 返回 Markdown 时应渲染粗体标题和编号列表，避免直接展示 `**` 标记。
+  it('renders markdown formatting in chat answers', () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        content={[
+          '这次人社部拟新增的 **12 个新职业** 是：',
+          '',
+          '1. **船舶岸基管理工程技术人员**：在岸上负责船舶航行安全。',
+          '2. **动物实验工程技术人员**：负责实验动物繁育。',
+        ].join('\n')}
+      />,
+    );
+
+    expect(html).toContain('<strong>12 个新职业</strong>');
+    expect(html).toContain('<ol>');
+    expect(html).toContain('<strong>船舶岸基管理工程技术人员</strong>');
+    expect(html).not.toContain('**12 个新职业**');
+  });
+
+  // 异常场景：Markdown 内容中的 HTML 字符串必须按普通文本转义，避免注入页面。
+  it('escapes html-like markdown content', () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown content={'**安全提示**：<script>alert(1)</script>'} />,
+    );
+
+    expect(html).toContain('<strong>安全提示</strong>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>alert(1)</script>');
   });
 
   // 正常场景：构造请求时应保留 2-3 条代表性上下文，并追加当前用户输入。
